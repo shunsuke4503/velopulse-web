@@ -267,14 +267,6 @@ if rows:
         else:
             st.info("この条件で3D表示できる区間がありません。心拍データがない場合はケイデンスとパワーが必要です。")
 
-        table = filtered[["Interval start", "CAD(rpm)", "HR(bpm)", "Watts(W)", "Slope(%)", "Temperature(C)", "_file"]].rename(columns={"Interval start": "区間開始", "CAD(rpm)": "CAD(rpm)", "HR(bpm)": "HR(bpm)", "Watts(W)": "Watts(W)", "Slope(%)": "Slope(%)", "Temperature(C)": "Temperature(C)", "_file": "Source file"})
-        st.dataframe(table, use_container_width=True, hide_index=True)
-        st.download_button("CSVを書き出す", table.to_csv(index=False).encode("utf-8-sig"), "velopulse.csv", "text/csv")
-        xlsx = io.BytesIO()
-        with pd.ExcelWriter(xlsx, engine="openpyxl") as writer:
-            table.to_excel(writer, index=False, sheet_name="Data")
-        st.download_button("Excelを書き出す", xlsx.getvalue(), "velopulse.xlsx")
-
     st.subheader("保存済みライド")
     for row in rows:
         summary = row.get("summary") or {}
