@@ -128,7 +128,8 @@ def save_intervals(record_id: int, summary: dict):
 
 def row_frame(row: dict) -> pd.DataFrame:
     summary = row.get("summary") or {}
-    frame = pd.DataFrame(summary.get("intervals", []))
+   intervals = summary.get("intervals", [])
+frame = pd.read_json(io.StringIO(intervals)) if isinstance(intervals, str) else pd.DataFrame(intervals)
     for column in DATA_COLUMNS:
         if column not in frame:
             frame[column] = pd.NA
