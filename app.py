@@ -222,24 +222,54 @@ if rows:
         with st.sidebar:
             st.subheader("グラフの絞り込み")
             date_range = st.date_input("期間", value=(dt.min().date(), dt.max().date()))
-            power_range = st.slider("パワー W", 0, power_max, (0, power_max))
-            cad_range = st.slider("ケイデンス rpm", 0, 200, (0, 200))
-            hr_range = st.slider("心拍 bpm", 0, hrmax, (0, hrmax))
-            slope_range = st.slider("傾斜 %", -40.0, 40.0, (-40.0, 40.0))
-            temp_range = st.slider("気温 °C", min(-20.0, temp_min), max(50.0, temp_max), (min(-20.0, temp_min), max(50.0, temp_max)))
+            power_cols = st.columns(2)
+            power_min = power_cols[0].number_input("パワー最小 W", value=0, step=1)
+            power_max_filter = power_cols[1].number_input("パワー最大 W", value=power_max, step=1)
+            cad_cols = st.columns(2)
+            cad_min = cad_cols[0].number_input("ケイデンス最小 rpm", value=0, step=1)
+            cad_max = cad_cols[1].number_input("ケイデンス最大 rpm", value=200, step=1)
+            hr_cols = st.columns(2)
+            hr_min = hr_cols[0].number_input("心拍最小 bpm", value=0, step=1)
+            hr_max_filter = hr_cols[1].number_input("心拍最大 bpm", value=hrmax, step=1)
+            slope_cols = st.columns(2)
+            slope_min = slope_cols[0].number_input("傾斜最小 %", value=-40.0, step=0.1, format="%.1f")
+            slope_max = slope_cols[1].number_input("傾斜最大 %", value=40.0, step=0.1, format="%.1f")
+            temp_cols = st.columns(2)
+            temp_min_filter = temp_cols[0].number_input("気温最小 °C", value=-20.0, step=0.1, format="%.1f")
+            temp_max_filter = temp_cols[1].number_input("気温最大 °C", value=50.0, step=0.1, format="%.1f")
         filtered = all_data.copy()
         if isinstance(date_range, tuple) and len(date_range) == 2:
             filtered = filtered[filtered["Interval start"].dt.date.between(date_range[0], date_range[1])]
-        for col, bounds in [("Watts(W)", power_range), ("CAD(rpm)", cad_range), ("HR(bpm)", hr_range), ("Slope(%)", slope_range), ("Temperature(C)", temp_range)]:
+        filter_ranges = [
+            ("Watts(W)", power_min, power_max_filter),
+            ("CAD(rpm)", cad_min, cad_max),
+            ("HR(bpm)", hr_min, hr_max_filter),
+            ("Slope(%)", slope_min, slope_max),
+            ("Temperature(C)", temp_min_filter, temp_max_filter),
+        ]
+        invalid_range = False
+        for col, minimum, maximum in filter_ranges:
+            if minimum > maximum:
+                invalid_range = True
+            else:
+                filtered = filtered[filtered[col].isna() | filtered[col].between(minimum, maximum)]
             filtered = filtered[filtered[col].isna() | filtered[col].between(bounds[0], bounds[1])]
 
         # Session level duration filter mirrors the desktop app's ride duration control.
         durations = all_data.groupby("_id")["Interval start"].agg(lambda s: (s.max() - s.min()).total_seconds() / 60 + interval_seconds / 60)
         with st.sidebar:
-            duration_bounds = st.slider("走行時間（分）", 0, max(10, int(durations.max() if len(durations) else 10)),
-                                        (0, max(10, int(durations.max() if len(durations) else 10))))
-        keep_ids = durations[durations.between(*duration_bounds)].index
-        filtered = filtered[filtered["_id"].isin(keep_ids)]
+            st.markdown("**走行時間（分）**")
+            duration_cols = st.columns(2)
+            duration_min = duration_cols[0].number_input("走行時間最小 分", value=0, step=1)
+            duration_max = duration_cols[1].number_input("走行時間最大 分", value=max(10, int(durations.max() if len(durations) else 10)), step=1)
+        if duration_min > duration_max:
+            invalid_range = True
+        else:
+            keep_ids = durations[durations.between(duration_min, duration_max)].index
+            filtered = filtered[filtered["_id"].isin(keep_ids)]
+        if invalid_range:
+            st.sidebar.warning("各項目の最小値は最大値以下にしてください。")
+            filtered = filtered.iloc[0:0]
 
         has_hr = filtered["HR(bpm)"].notna().any()
         ycol, ylabel = ("HR(bpm)", "心拍 (bpm)") if has_hr else ("elapsed_min", "経過時間 (分)")
@@ -257,11 +287,11 @@ if rows:
                         delaunayaxis="z", colorbar={"title": "Watts"}, name="平均曲面"))
                 except Exception:
                     pass
-            fig.add_trace(go.Scatter3d(x=graph["CAD(rpm)"], y=graph[ycol], z=graph["Watts(W)"],
-                mode="markers", marker={"size": 4, "color": graph["Watts(W)"], "colorscale": "Jet", "showscale": True,
-                                         "colorbar": {"title": "Watts"}},
-                text=graph["_file"], hovertemplate="CAD %{x:.1f} rpm<br>" + ylabel + " %{y:.1f}<br>Power %{z:.1f} W<br>%{text}<extra></extra>"))
-            fig.update_layout(scene={"xaxis_title": "CAD (rpm)", "yaxis_title": ylabel, "zaxis_title": "Watts (W)"}, height=650, margin={"l": 0, "r": 0, "t": 25, "b": 0})
+            fig.update_layout(scene={
+                "xaxis": {"title": "CAD (rpm)", "showgrid": True, "gridcolor": "#b8bec8", "gridwidth": 1},
+                "yaxis": {"title": ylabel, "showgrid": True, "gridcolor": "#b8bec8", "gridwidth": 1},
+                "zaxis": {"title": "Watts (W)", "showgrid": True, "gridcolor": "#b8bec8", "gridwidth": 1},
+            }, height=650, margin={"l": 0, "r": 0, "t": 25, "b": 0})
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("この条件で3D表示できる区間がありません。心拍データがない場合はケイデンスとパワーが必要です。")
