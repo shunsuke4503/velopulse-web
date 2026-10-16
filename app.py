@@ -144,19 +144,20 @@ def row_frame(row: dict) -> pd.DataFrame:
 
 
 
-st.subheader("区間平均の設定")
-left, right = st.columns([1, 3])
-with left:
+with st.sidebar:
+    st.subheader("区間平均の設定")
     minutes = st.number_input("分", min_value=0, max_value=1440, value=2, step=1)
     seconds = st.number_input("秒", min_value=0, max_value=59, value=0, step=5)
 interval_seconds = int(minutes * 60 + seconds)
 if interval_seconds < 1:
-    st.warning("区間は1秒以上にしてください。")
+    st.sidebar.warning("区間は1秒以上にしてください。")
     st.stop()
 
-st.subheader("FITファイルを追加")
-uploads = st.file_uploader("FITファイル（複数選択可）", type=["fit"], accept_multiple_files=True)
-if uploads and st.button("選択したFITを保存", type="primary"):
+with st.sidebar:
+    st.subheader("FITファイルを追加")
+    uploads = st.file_uploader("FITファイル（複数選択可）", type=["fit"], accept_multiple_files=True)
+    save_uploads = uploads and st.button("選択したFITを保存", type="primary")
+if save_uploads:
     existing = {r.get("file_hash") for r in load_rows()}
     for uploaded in uploads:
         raw = uploaded.getvalue()
@@ -189,7 +190,11 @@ if rows:
     st.subheader("履歴と3Dグラフ")
     current_intervals = {r.get("summary", {}).get("interval_seconds") for r in rows if (r.get("summary") or {}).get("intervals")}
     if current_intervals != {interval_seconds}:
-        if st.button("保存済みFITをこの区間で再集計"):
+        with st.sidebar:
+            st.subheader("再集計")
+            reaggregate = st.button("保存済みFITをこの区間で再集計")
+            st.caption("区間設定を変えた場合は、保存済みFITを再集計してください。")
+        if reaggregate:
             bar = st.progress(0)
             for i, row in enumerate(rows):
                 object_path = f"{user.id}/{row['file_hash']}.fit"
@@ -202,27 +207,26 @@ if rows:
                     st.error(f"{row['file_name']}を再集計できません: {exc}")
                 bar.progress((i + 1) / len(rows))
             st.rerun()
-        st.caption("区間設定を変えた場合は、保存済みFITを再集計してください。")
 
     all_data = pd.concat([row_frame(r).assign(_id=r["id"], _file=r["file_name"]) for r in rows], ignore_index=True)
     all_data["Interval start"] = pd.to_datetime(all_data["Interval start"], errors="coerce")
     if all_data["Interval start"].notna().any():
-        c1, c2, c3 = st.columns(3)
         dt = all_data["Interval start"].dropna()
-        date_range = c1.date_input("期間", value=(dt.min().date(), dt.max().date()))
         max_power_value = all_data["Watts(W)"].max(skipna=True)
         power_max = max(100, int(max_power_value)) if pd.notna(max_power_value) else 100
-        power_range = c2.slider("パワー W", 0, power_max, (0, power_max))
-        cad_range = c3.slider("ケイデンス rpm", 0, 200, (0, 200))
-        c4, c5, c6 = st.columns(3)
         hr_value = all_data["HR(bpm)"].max(skipna=True)
         hrmax = max(220, int(hr_value)) if pd.notna(hr_value) else 220
-        hr_range = c4.slider("心拍 bpm", 0, hrmax, (0, hrmax))
-        slope_range = c5.slider("傾斜 %", -40.0, 40.0, (-40.0, 40.0))
         temp_min_value, temp_max_value = all_data["Temperature(C)"].min(skipna=True), all_data["Temperature(C)"].max(skipna=True)
         temp_min = float(temp_min_value) if pd.notna(temp_min_value) else -10.0
         temp_max = float(temp_max_value) if pd.notna(temp_max_value) else 40.0
-        temp_range = c6.slider("気温 °C", min(-20.0, temp_min), max(50.0, temp_max), (min(-20.0, temp_min), max(50.0, temp_max)))
+        with st.sidebar:
+            st.subheader("グラフの絞り込み")
+            date_range = st.date_input("期間", value=(dt.min().date(), dt.max().date()))
+            power_range = st.slider("パワー W", 0, power_max, (0, power_max))
+            cad_range = st.slider("ケイデンス rpm", 0, 200, (0, 200))
+            hr_range = st.slider("心拍 bpm", 0, hrmax, (0, hrmax))
+            slope_range = st.slider("傾斜 %", -40.0, 40.0, (-40.0, 40.0))
+            temp_range = st.slider("気温 °C", min(-20.0, temp_min), max(50.0, temp_max), (min(-20.0, temp_min), max(50.0, temp_max)))
         filtered = all_data.copy()
         if isinstance(date_range, tuple) and len(date_range) == 2:
             filtered = filtered[filtered["Interval start"].dt.date.between(date_range[0], date_range[1])]
@@ -231,16 +235,11 @@ if rows:
 
         # Session level duration filter mirrors the desktop app's ride duration control.
         durations = all_data.groupby("_id")["Interval start"].agg(lambda s: (s.max() - s.min()).total_seconds() / 60 + interval_seconds / 60)
-        duration_bounds = st.slider("走行時間（分）", 0, max(10, int(durations.max() if len(durations) else 10)),
-                                    (0, max(10, int(durations.max() if len(durations) else 10))))
+        with st.sidebar:
+            duration_bounds = st.slider("走行時間（分）", 0, max(10, int(durations.max() if len(durations) else 10)),
+                                        (0, max(10, int(durations.max() if len(durations) else 10))))
         keep_ids = durations[durations.between(*duration_bounds)].index
         filtered = filtered[filtered["_id"].isin(keep_ids)]
-
-        metrics = st.columns(4)
-        metrics[0].metric("表示区間", f"{len(filtered):,}")
-        metrics[1].metric("平均パワー", f"{filtered['Watts(W)'].mean():.1f} W" if filtered["Watts(W)"].notna().any() else "—")
-        metrics[2].metric("平均心拍", f"{filtered['HR(bpm)'].mean():.1f} bpm" if filtered["HR(bpm)"].notna().any() else "—")
-        metrics[3].metric("平均ケイデンス", f"{filtered['CAD(rpm)'].mean():.1f} rpm" if filtered["CAD(rpm)"].notna().any() else "—")
 
         has_hr = filtered["HR(bpm)"].notna().any()
         ycol, ylabel = ("HR(bpm)", "心拍 (bpm)") if has_hr else ("elapsed_min", "経過時間 (分)")
@@ -267,18 +266,19 @@ if rows:
         else:
             st.info("この条件で3D表示できる区間がありません。心拍データがない場合はケイデンスとパワーが必要です。")
 
-    st.subheader("保存済みライド")
-    for row in rows:
-        summary = row.get("summary") or {}
-        label = f"{str(row.get('activity_date', ''))[:10]} · {row['file_name']} · {summary.get('intervals') and len(pd.read_json(io.StringIO(summary['intervals'])))}区間"
-        with st.expander(label):
-            st.caption(f"SHA-256: {row['file_hash']}")
-            if st.button("このライドを削除（FIT原本も削除）", key=f"delete_{row['id']}"):
-                try:
-                    sb.table("training_records").delete().eq("id", row["id"]).eq("user_id", user.id).execute()
-                    sb.storage.from_(BUCKET).remove([f"{user.id}/{row['file_hash']}.fit"])
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"削除できませんでした: {exc}")
+    with st.sidebar:
+        st.subheader("保存済みライド")
+        for row in rows:
+            summary = row.get("summary") or {}
+            label = f"{str(row.get('activity_date', ''))[:10]} · {row['file_name']} · {summary.get('intervals') and len(pd.read_json(io.StringIO(summary['intervals'])))}区間"
+            with st.expander(label):
+                st.caption(f"SHA-256: {row['file_hash']}")
+                if st.button("このライドを削除（FIT原本も削除）", key=f"delete_{row['id']}"):
+                    try:
+                        sb.table("training_records").delete().eq("id", row["id"]).eq("user_id", user.id).execute()
+                        sb.storage.from_(BUCKET).remove([f"{user.id}/{row['file_hash']}.fit"])
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"削除できませんでした: {exc}")
 else:
-    st.info("記録はありません。FITファイルを追加してください。")
+    st.sidebar.info("記録はありません。FITファイルを追加してください。")
