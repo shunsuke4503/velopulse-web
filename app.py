@@ -253,7 +253,6 @@ if rows:
                 invalid_range = True
             else:
                 filtered = filtered[filtered[col].isna() | filtered[col].between(minimum, maximum)]
-            filtered = filtered[filtered[col].isna() | filtered[col].between(bounds[0], bounds[1])]
 
         # Session level duration filter mirrors the desktop app's ride duration control.
         durations = all_data.groupby("_id")["Interval start"].agg(lambda s: (s.max() - s.min()).total_seconds() / 60 + interval_seconds / 60)
