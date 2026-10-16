@@ -124,12 +124,13 @@ def load_rows():
 
 def save_intervals(record_id: int, summary: dict):
     sb.table("training_records").update({"summary": summary}).eq("id", record_id).eq("user_id", user.id).execute()
-
-
 def row_frame(row: dict) -> pd.DataFrame:
     summary = row.get("summary") or {}
-   intervals = summary.get("intervals", [])
-frame = pd.read_json(io.StringIO(intervals)) if isinstance(intervals, str) else pd.DataFrame(intervals)
+    intervals = summary.get("intervals", [])
+    if isinstance(intervals, str):
+        frame = pd.read_json(io.StringIO(intervals))
+    else:
+        frame = pd.DataFrame(intervals)
     for column in DATA_COLUMNS:
         if column not in frame:
             frame[column] = pd.NA
@@ -139,6 +140,8 @@ frame = pd.read_json(io.StringIO(intervals)) if isinstance(intervals, str) else 
         for column in DATA_COLUMNS[2:7]:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
     return frame[DATA_COLUMNS]
+
+
 
 
 st.subheader("区間平均の設定")
