@@ -1,0 +1,6 @@
+streamlit>=1.37,<2
+supabase>=2.6,<3
+fitparse>=1.2,<2
+pandas>=2.2,<3
+plotly>=5.23,<7
+openpyxl>=3.1,<4
