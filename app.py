@@ -188,24 +188,29 @@ except Exception as exc:
 
 if rows:
     st.subheader("履歴と3Dグラフ")
-    current_intervals = {r.get("summary", {}).get("interval_seconds") for r in rows if (r.get("summary") or {}).get("intervals")}
-    if current_intervals != {interval_seconds}:
+    needs_reaggregation = any(
+        (row.get("summary") or {}).get("interval_seconds") != interval_seconds
+        or not (row.get("summary") or {}).get("intervals")
+        for row in rows
+    )
+    if needs_reaggregation:
         with st.sidebar:
-            st.subheader("再集計")
-            reaggregate = st.button("保存済みFITをこの区間で再集計")
-            st.caption("区間設定を変えた場合は、保存済みFITを再集計してください。")
-        if reaggregate:
+            st.info("区間設定が変わったため、保存済みFITを自動で再集計しています。")
             bar = st.progress(0)
-            for i, row in enumerate(rows):
-                object_path = f"{user.id}/{row['file_hash']}.fit"
-                try:
-                    raw = sb.storage.from_(BUCKET).download(object_path)
-                    averages, _ = parse_fit(raw, interval_seconds)
-                    summary = {"interval_seconds": interval_seconds, "intervals": averages.to_json(orient="records", date_format="iso")}
-                    save_intervals(row["id"], summary)
-                except Exception as exc:
-                    st.error(f"{row['file_name']}を再集計できません: {exc}")
-                bar.progress((i + 1) / len(rows))
+        reaggregate_failed = False
+        for i, row in enumerate(rows):
+            object_path = f"{user.id}/{row['file_hash']}.fit"
+            try:
+                raw = sb.storage.from_(BUCKET).download(object_path)
+                averages, _ = parse_fit(raw, interval_seconds)
+                summary = {"interval_seconds": interval_seconds, "intervals": averages.to_json(orient="records", date_format="iso")}
+                save_intervals(row["id"], summary)
+            except Exception as exc:
+                reaggregate_failed = True
+                st.error(f"{row['file_name']}を再集計できません: {exc}")
+            bar.progress((i + 1) / len(rows))
+        bar.empty()
+        if not reaggregate_failed:
             st.rerun()
 
     all_data = pd.concat([row_frame(r).assign(_id=r["id"], _file=r["file_name"]) for r in rows], ignore_index=True)
@@ -326,8 +331,9 @@ if rows:
                 "xaxis": {"title": "CAD (rpm)", "showgrid": True, "gridcolor": "#b8bec8", "gridwidth": 1},
                 "yaxis": {"title": ylabel, "showgrid": True, "gridcolor": "#b8bec8", "gridwidth": 1},
                 "zaxis": {"title": "Watts (W)", "showgrid": True, "gridcolor": "#b8bec8", "gridwidth": 1},
-            }, height=650, margin={"l": 0, "r": 0, "t": 25, "b": 0})
-            st.plotly_chart(fig, use_container_width=True)
+                "aspectmode": "cube",
+            }, width=700, height=700, margin={"l": 0, "r": 0, "t": 25, "b": 0})
+            st.plotly_chart(fig, use_container_width=False)
         else:
             st.info("この条件で3D表示できる区間がありません。心拍データがない場合はケイデンスとパワーが必要です。")
 
