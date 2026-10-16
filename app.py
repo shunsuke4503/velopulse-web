@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 from supabase import Client, create_client
-
+from supabase.client import ClientOptions
 BUCKET = "velopulse-fit-files"
 DATA_COLUMNS = ["Session", "Interval start", "CAD(rpm)", "HR(bpm)", "Watts(W)", "Slope(%)", "Temperature(C)", "Source file"]
 
@@ -32,7 +32,9 @@ url, key = get_secret("SUPABASE_URL"), get_secret("SUPABASE_ANON_KEY")
 if not url or not key:
     st.error("Supabase接続設定がありません。READMEの手順を確認してください。")
     st.stop()
-sb: Client = create_client(url, key)
+access_token = st.session_state.get("access_token")
+client_options = ClientOptions(headers={"Authorization": f"Bearer {access_token}"}) if access_token else None
+sb: Client = create_client(url, key, client_options)
 
 
 def clear_login():
@@ -70,8 +72,7 @@ if "access_token" not in st.session_state:
     st.stop()
 
 # Attach the user's JWT to PostgREST and Storage requests; the database and bucket RLS policies enforce ownership.
-sb.postgrest.auth(st.session_state.access_token)
-sb.storage.set_auth(st.session_state.access_token)
+
 user = st.session_state.user
 with st.sidebar:
     st.write(f"ログイン中: {user.email}")
