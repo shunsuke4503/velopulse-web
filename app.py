@@ -12,7 +12,6 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 from supabase import Client, create_client
-from supabase.client import ClientOptions
 BUCKET = "velopulse-fit-files"
 DATA_COLUMNS = ["Session", "Interval start", "CAD(rpm)", "HR(bpm)", "Watts(W)", "Slope(%)", "Temperature(C)", "Source file"]
 
@@ -33,17 +32,30 @@ if not url or not key:
     st.error("Supabase接続設定がありません。READMEの手順を確認してください。")
     st.stop()
 access_token = st.session_state.get("access_token")
-client_options = ClientOptions(headers={"Authorization": f"Bearer {access_token}"}) if access_token else None
-sb: Client = create_client(url, key, client_options)
+refresh_token = st.session_state.get("refresh_token")
+sb: Client = create_client(url, key)
+if access_token and refresh_token:
+    try:
+        auth = sb.auth.set_session(access_token, refresh_token)
+        st.session_state.access_token = auth.session.access_token
+        st.session_state.refresh_token = auth.session.refresh_token
+        st.session_state.user = auth.user
+    except Exception:
+        for name in ("access_token", "refresh_token", "user"):
+            st.session_state.pop(name, None)
+elif access_token:
+    # Older sessions created before refresh-token persistence require one fresh login.
+    for name in ("access_token", "user"):
+        st.session_state.pop(name, None)
 
 
 def clear_login():
-    for name in ("access_token", "user"):
+    for name in ("access_token", "refresh_token", "user"):
         st.session_state.pop(name, None)
     st.rerun()
 
 
-if "access_token" not in st.session_state:
+if "access_token" not in st.session_state or "refresh_token" not in st.session_state:
     login, signup = st.tabs(["ログイン", "新規登録"])
     with login, st.form("login_form"):
         email = st.text_input("メールアドレス")
@@ -52,7 +64,9 @@ if "access_token" not in st.session_state:
         if submit:
             try:
                 auth = sb.auth.sign_in_with_password({"email": email, "password": password})
-                st.session_state.access_token, st.session_state.user = auth.session.access_token, auth.user
+                st.session_state.access_token = auth.session.access_token
+                st.session_state.refresh_token = auth.session.refresh_token
+                st.session_state.user = auth.user
                 st.rerun()
             except Exception as exc:
                 st.error(f"ログインできませんでした: {exc}")
@@ -64,7 +78,9 @@ if "access_token" not in st.session_state:
             try:
                 result = sb.auth.sign_up({"email": email, "password": password})
                 if result.session:
-                    st.session_state.access_token, st.session_state.user = result.session.access_token, result.user
+                    st.session_state.access_token = result.session.access_token
+                    st.session_state.refresh_token = result.session.refresh_token
+                    st.session_state.user = result.user
                     st.rerun()
                 st.success("確認メールを送りました。メールのリンクを開いた後、ログインしてください。")
             except Exception as exc:
@@ -158,7 +174,11 @@ with st.sidebar:
     uploads = st.file_uploader("FITファイル（複数選択可）", type=["fit"], accept_multiple_files=True)
     save_uploads = uploads and st.button("選択したFITを保存", type="primary")
 if save_uploads:
-    existing = {r.get("file_hash") for r in load_rows()}
+    try:
+        existing = {r.get("file_hash") for r in load_rows()}
+    except Exception as exc:
+        st.error(f"保存前に履歴を読み込めませんでした。ログインし直してから再度お試しください: {exc}")
+        st.stop()
     for uploaded in uploads:
         raw = uploaded.getvalue()
         digest = sha256(raw)
