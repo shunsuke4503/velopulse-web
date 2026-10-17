@@ -347,7 +347,10 @@ if rows:
                 "power_hr": {"x": 2.5, "y": 0.01, "z": 0.01},
                 "cad_hr": {"x": 0.01, "y": 0.01, "z": 2.5},
             }
-            fig.update_layout(scene_camera={"eye": camera_views[st.session_state.graph_view]})
+            fig.update_layout(scene_camera={
+                "eye": camera_views[st.session_state.graph_view],
+                "projection": {"type": "orthographic"},
+            })
             st.plotly_chart(fig, use_container_width=False)
         else:
             st.info("この条件で3D表示できる区間がありません。心拍データがない場合はケイデンスとパワーが必要です。")
