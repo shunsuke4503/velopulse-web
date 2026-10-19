@@ -304,10 +304,31 @@ if rows:
         if len(graph):
             fig = go.Figure()
             unique = graph.groupby(["CAD(rpm)", ycol], as_index=False)["Watts(W)"].mean()
+            default_camera_eye = {"x": 1.5, "y": 1.5, "z": 2.2}
             if len(unique) >= 3:
                 sample_x = unique["CAD(rpm)"].to_numpy(dtype=float)
                 sample_y = unique[ycol].to_numpy(dtype=float)
                 sample_z = unique["Watts(W)"].to_numpy(dtype=float)
+                plane_points = np.column_stack((sample_x, sample_y, sample_z))
+                axis_scales = np.std(plane_points, axis=0)
+                axis_scales[axis_scales < 1e-9] = 1.0
+                normalized_points = (plane_points - plane_points.mean(axis=0)) / axis_scales
+                try:
+                    _, _, plane_axes = np.linalg.svd(normalized_points, full_matrices=False)
+                    plane_normal = plane_axes[-1] / axis_scales
+                    if plane_normal[2] < 0:
+                        plane_normal = -plane_normal
+                    # Bias the plane-normal view upward so the surface is seen obliquely from above.
+                    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+                    plane_normal = plane_normal + np.array([0.0, 0.0, 0.35])
+                    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+                    default_camera_eye = {
+                        "x": float(2.5 * plane_normal[0]),
+                        "y": float(2.5 * plane_normal[1]),
+                        "z": float(2.5 * plane_normal[2]),
+                    }
+                except np.linalg.LinAlgError:
+                    pass
                 grid_size = 30
                 grid_x = np.linspace(sample_x.min(), sample_x.max(), grid_size)
                 grid_y = np.linspace(sample_y.min(), sample_y.max(), grid_size)
@@ -368,7 +389,7 @@ if rows:
                 st.session_state.graph_view = "cad_hr"
                 st.session_state.camera_revision += 1
             camera_views = {
-                "default": {"x": 1.5, "y": 1.5, "z": 2.2},
+                "default": default_camera_eye,
                 "power_cad": {"x": 0.01, "y": 2.5, "z": 0.01},
                 "power_hr": {"x": 2.5, "y": 0.01, "z": 0.01},
                 "cad_hr": {"x": 0.01, "y": 0.01, "z": 2.5},
