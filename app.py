@@ -354,15 +354,21 @@ if rows:
                 "aspectmode": "cube",
             }, width=700, height=700, margin={"l": 0, "r": 0, "t": 25, "b": 0})
             if "graph_view" not in st.session_state:
-                st.session_state.graph_view = "power_cad"
+                st.session_state.graph_view = "default"
+            if "camera_revision" not in st.session_state:
+                st.session_state.camera_revision = 0
             view_cols = st.columns(3)
             if view_cols[0].button("パワー × ケイデンス", use_container_width=True):
                 st.session_state.graph_view = "power_cad"
+                st.session_state.camera_revision += 1
             if view_cols[1].button("パワー × 心拍", use_container_width=True, disabled=not has_hr):
                 st.session_state.graph_view = "power_hr"
+                st.session_state.camera_revision += 1
             if view_cols[2].button("ケイデンス × 心拍", use_container_width=True, disabled=not has_hr):
                 st.session_state.graph_view = "cad_hr"
+                st.session_state.camera_revision += 1
             camera_views = {
+                "default": {"x": 1.5, "y": 1.5, "z": 2.2},
                 "power_cad": {"x": 0.01, "y": 2.5, "z": 0.01},
                 "power_hr": {"x": 2.5, "y": 0.01, "z": 0.01},
                 "cad_hr": {"x": 0.01, "y": 0.01, "z": 2.5},
@@ -370,8 +376,8 @@ if rows:
             fig.update_layout(scene_camera={
                 "eye": camera_views[st.session_state.graph_view],
                 "projection": {"type": "orthographic"},
-            })
-            st.plotly_chart(fig, use_container_width=False)
+            }, scene_uirevision=st.session_state.camera_revision)
+            st.plotly_chart(fig, use_container_width=False, key="velopulse_3d_graph")
         else:
             st.info("この条件で3D表示できる区間がありません。心拍データがない場合はケイデンスとパワーが必要です。")
 
